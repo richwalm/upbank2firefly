@@ -259,23 +259,6 @@ def HandleTransaction(Type, Data):
 
     return True
 
-def CheckMessageSecure():
-    AuthHeader = request.headers.get('X-Up-Authenticity-Signature')
-    if not AuthHeader:
-        app.logger.warn('Missing X-Up-Authenticity-Signature header.')
-        abort(403)
-
-    Body = request.data
-    if not Body:
-        app.logger.warn('Missing body.')
-        abort(403)
-
-    HMAC = hmac.new(os.environb[b'UPBANK_SECRET'], Body, 'sha256')
-    Digest = HMAC.hexdigest()
-    if not hmac.compare_digest(Digest, AuthHeader):
-        app.logger.error('HMAC did\'t match; %s != %s', Digest, AuthHeader)
-        abort(403)
-
 """ Debuging route. """
 def CheckDebug():
     AuthHeader = request.headers.get('Authorization')
@@ -302,6 +285,23 @@ def delete(ID):
     return 'OK'
 
 """ Primary route. """
+def CheckMessageSecure():
+    AuthHeader = request.headers.get('X-Up-Authenticity-Signature')
+    if not AuthHeader:
+        app.logger.warn('Missing X-Up-Authenticity-Signature header.')
+        abort(403)
+
+    Body = request.data
+    if not Body:
+        app.logger.warn('Missing body.')
+        abort(403)
+
+    HMAC = hmac.new(os.environb[b'UPBANK_SECRET'], Body, 'sha256')
+    Digest = HMAC.hexdigest()
+    if not hmac.compare_digest(Digest, AuthHeader):
+        app.logger.error('HMAC did\'t match; %s != %s', Digest, AuthHeader)
+        abort(403)
+
 @app.route('/', methods = ['POST'])
 def index():
     # API Doc; https://developer.up.com.au/#callback_post_webhookURL
