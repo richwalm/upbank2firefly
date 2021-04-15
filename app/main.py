@@ -209,6 +209,7 @@ def HandleTransaction(Type, Data):
         else:
             FireflyBase['destination_id'] = FireflyAccountID
             if Description == 'Round Up' or Description.startswith('Quick save transfer from '):
+                FireflyBase['category_name'] = 'Savings'
                 FireflyBase['source_id'] = Accounts[Checking]
                 FireflyBase['type'] = 'transfer'
             else:
