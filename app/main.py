@@ -69,7 +69,7 @@ def PerformRequest(URL, PAT, Accept = None, Method = None, IsJSON = False, Data 
         else:
             Reponse = Resp.read()
     except urllib.error.HTTPError as e:
-        app.logger.exception('Got HTTP status code %s while downloading; %s', e.code, URL)
+        app.logger.exception('Got HTTP status code %s while %s\'ing; %s', e.code, Method or 'GET', URL)
         return None, True
     except json.JSONDecodeError:
         app.logger.exception('Expected JSON is not valid; %s', URL)
@@ -203,6 +203,7 @@ def HandleTransaction(Type, Data):
                 return False
             FireflyBase['source_id'] = FireflyAccountID
             FireflyBase['destination_name'] = GetSuitableName(UpBase)
+            FireflyBase['amount'] = str(abs(Amount[2]))
             FireflyBase['type'] = 'withdrawal'
         # Deposit.
         else:
@@ -274,6 +275,32 @@ def CheckMessageSecure():
         app.logger.error('HMAC did\'t match; %s != %s', Digest, AuthHeader)
         abort(403)
 
+""" Debuging route. """
+def CheckDebug():
+    AuthHeader = request.headers.get('Authorization')
+    Token = os.environ.get('DEBUG_PAT')
+    if not (AuthHeader and Token and AuthHeader == 'Bearer ' + Token):
+        abort(403)
+
+@app.route('/get/<ID>')
+def get(ID):
+    CheckDebug()
+    URL = 'https://api.up.com.au/api/v1/transactions/' + ID
+    Data = PerformRequest(URL, os.environ['UPBANK_PAT'], IsJSON = True)
+    if not Data[0]:
+        return 'FAILED TO DOWNLOAD', 500
+    if not HandleTransaction('TRANSACTION_SETTLED', Data[0]):
+        return 'ERROR', 500
+    return 'OK'
+
+@app.route('/delete/<ID>')
+def delete(ID):
+    CheckDebug()
+    if not DeleteTransaction(ID):
+        return 'ERROR', 500
+    return 'OK'
+
+""" Primary route. """
 @app.route('/', methods = ['POST'])
 def index():
     # API Doc; https://developer.up.com.au/#callback_post_webhookURL
