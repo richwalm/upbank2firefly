@@ -1,0 +1,13 @@
+#!/bin/sh
+. ./.env
+
+# Up Bank
+curl https://api.up.com.au/api/v1/util/ping \
+-H "Authorization: Bearer $UPBANK_PAT" \
+-s -f
+
+# Firefly
+curl "$FIREFLY_BASEURL/api/v1/configuration" \
+-H "Accept: application/json" \
+-H "Authorization: Bearer $FIREFLY_PAT" \
+-s -f

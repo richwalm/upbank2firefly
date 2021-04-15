@@ -17,20 +17,57 @@ if 'FIREFLY_PAT' not in os.environ:
     raise Exception('You need to define FIREFLY_PAT.')
 if 'FIREFLY_BASEURL' not in os.environ:
     raise Exception('You need to define FIREFLY_BASEURL.')
+if 'ACCOUNT_MAPPING' not in os.environ:
+    raise Exception('You need to define ACCOUNT_MAPPING.')
 
 Timeout = 10
+Accounts = {}
+Checking = None
 
-def PerformRequest(URL, PAT, Accept = None, Method = None, IsJSON = False):
+def SetupAccountMapping():
+    global Checking
+
+    String = os.environ['ACCOUNT_MAPPING']
+
+    AccountStrings = String.split(',')
+    if len(AccountStrings) < 2:
+        raise Exception('ACCOUNT_MAPPING expects at least two accounts.')
+
+    for Account in AccountStrings:
+        Split = Account.find(':')
+        if Split == -1:
+            raise Exception('Missing sperator (:) in account mapping.')
+
+        UpAccountID = Account[:Split]
+        FireflyAccountID = Account[Split + 1:]
+
+        try:
+            FireflyAccountID = int(FireflyAccountID)
+            if FireflyAccountID < 1:
+                raise Exception('Firefly account ID is a negative interger.')
+        except Exception:
+            raise Exception('Firefly account ID is not valid.')
+
+        Accounts[UpAccountID] = FireflyAccountID
+        # We'll record the first as the checking account.
+        if not Checking:
+            Checking = UpAccountID
+
+SetupAccountMapping()
+
+def PerformRequest(URL, PAT, Accept = None, Method = None, IsJSON = False, Data = None):
     try:
-        Req = urllib.request.Request(URL, method = Method)
+        Req = urllib.request.Request(URL, data = Data, method = Method)
         Req.add_header('Authorization', 'Bearer {}'.format(PAT))
         if Accept:
             Req.add_header('Accept', Accept)
+        if Data:
+            Req.add_header('Content-Type', 'application/json')
         Resp = urllib.request.urlopen(Req, timeout = Timeout)
         if IsJSON:
-            Data = json.load(Resp)
+            Reponse = json.load(Resp)
         else:
-            Data = Resp.read()
+            Reponse = Resp.read()
     except urllib.error.HTTPError as e:
         app.logger.exception('Got HTTP status code %s while downloading; %s', e.code, URL)
         return None, True
@@ -41,16 +78,14 @@ def PerformRequest(URL, PAT, Accept = None, Method = None, IsJSON = False):
         app.logger.exception('Failed to download JSON; %s', URL)
         return None, False
 
-    return Data, None
+    return Reponse, None
 
-def DeleteTransaction(ID):
-    app.logger.info('Received a delete message for ID; %s', ID)
-
-    # Search for the Up ID in Firefly.
+def SearchFirefly(ID):
+    # API Doc; https://api-docs.firefly-iii.org/#/search/searchTransactions
     URL = '{}/api/v1/search/transactions?query=external_id:{}'.format(os.environ['FIREFLY_BASEURL'], ID)
     Data = PerformRequest(URL, os.environ['FIREFLY_PAT'], 'application/vnd.api+json', IsJSON = True)
     if not Data[0]:
-        return False
+        return
 
     JSON = Data[0]
 
@@ -58,11 +93,11 @@ def DeleteTransaction(ID):
         Count = len(JSON['data'])
     except Exception:
         app.logger.error('Unexpected JSON from Firefly\'s URL; %s', URL)
-        return False
+        return
 
     if not Count:
         app.logger.warning('No Firefly transaction with the external_id of %s.', ID)
-        return False
+        return
     elif Count > 1:
         # Should be in most recent order so this shouldn't matter.
         app.logger.warning('Multiple transactions with the external_id of %s. Using the first.', ID)
@@ -71,9 +106,19 @@ def DeleteTransaction(ID):
         FireflyID = JSON['data'][0]['id']
     except Exception:
         app.logger.exception('Failed to extract ID from Firefly\'s search results for external_id; %s', ID)
+        return
+
+    return FireflyID
+
+def DeleteTransaction(ID):
+    app.logger.info('Received a delete message for ID; %s', ID)
+
+    # Search for the Up ID in Firefly.
+    FireflyID = SearchFirefly(ID)
+    if not FireflyID:
         return False
 
-    # Delete from Firefly.
+    # API Doc; https://api-docs.firefly-iii.org/#/transactions/deleteTransaction
     URL = '{}/api/v1/transaction/{}'.format(os.environ['FIREFLY_BASEURL'], FireflyID)
     Data = PerformRequest(URL, os.environ['FIREFLY_PAT'], None, 'DELETE')
     if not Data[0]:
@@ -82,10 +127,135 @@ def DeleteTransaction(ID):
     app.logger.info('Successfully deleted transaction %s (Up ID %s)', FireflyID, ID)
     return True
 
-def HandleTransaction(Type, TransactionData):
+def HandleAmount(Amount):
+    IntPrice = Amount['valueInBaseUnits'] / 100
+    StringPrice = float(Amount['value'])
+
+    if IntPrice != StringPrice:
+        raise Exception('Up amount values don\'t match. {} != {}'.format(IntPrice, StringPrice))
+
+    return Amount['value'], Amount['currencyCode'], IntPrice
+
+def HandleTransaction(Type, Data):
     app.logger.info('Received a %s message to process.', Type)
 
-    return False
+    # API Doc; https://developer.up.com.au/#get_transactions_id
+
+    try:
+        ID = Data['data']['id']
+    except Exception:
+        app.logger.exception('Transacyytion is missing an ID.')
+        return False
+
+    FireflyID = None
+    if Type == 'TRANSACTION_SETTLED':
+        # Update if we already have it.
+        FireflyID = SearchFirefly(ID)
+
+    # Create the transaction.
+    # API Doc; https://api-docs.firefly-iii.org/#/transactions/storeTransaction
+    Trans = {'transactions': [ {'external_id': ID} ]}
+    FireflyBase = Trans['transactions'][0]
+    UpBase = Data['data']
+
+    # Basic infomation.
+    FireflyBase['date'] = FireflyBase['createdAt'] = UpBase['attributes']['createdAt']
+    Description = FireflyBase['description'] = UpBase['attributes']['description']
+    if UpBase['attributes']['status'] == 'SETTLED':
+        FireflyBase['process_date'] = UpBase['attributes']['settledAt']
+
+    # Amount.
+    Amount = HandleAmount(UpBase['attributes']['amount'])
+    FireflyBase['amount'] = Amount[0]
+    FireflyBase['currency_code'] = Amount[1]
+
+    # Source account.
+    FocusAccount = UpBase['relationships']['account']['data']['id']
+    if FocusAccount not in Accounts:
+        raise Exception('Transaction {} has an unknown source account; {}'.format(ID, FocusAccount))
+    FireflyAccountID = Accounts[FocusAccount]
+
+    def GetSuitableName(UpBase):
+        if UpBase['relationships']['category']['data']:
+            return UpBase['relationships']['category']['data']['id']
+        return UpBase['attributes']['description']
+
+    # Handle type.
+    if UpBase['relationships']['transferAccount']['data']:
+        # Transfer.
+        # As we receive two transactions (incoming & outgoing) from Up, we'll disregard the incoming.
+        if Amount[2] > 0:
+            app.logger.info('Disregarding incoming transfer transaction; %s ($%s %s)', ID, Amount[2], Amount[1])
+            return False
+        DestAccount = UpBase['relationships']['transferAccount']['data']['id']
+        if DestAccount not in Accounts:
+            raise Exception('Transaction {} has an unknown destination account; {}'.format(ID, DestAccount))
+        FireflyBase['source_id'] = FireflyAccountID
+        FireflyBase['destination_id'] = Accounts[DestAccount]
+        FireflyBase['type'] = 'transfer'
+    else:
+        # Bit of an API flaw here; https://github.com/up-banking/api/issues/80
+        # Round Up don't appear as transfers.
+        # Withdrawal.
+        if Amount[2] < 0:
+            if Description.startswith('Quick save transfer to '):
+                app.logger.info('Disregarding outgoing save transfer transaction; %s ($%s %s)', ID, Amount[2], Amount[1])
+                return False
+            FireflyBase['source_id'] = FireflyAccountID
+            FireflyBase['destination_name'] = GetSuitableName(UpBase)
+            FireflyBase['type'] = 'withdrawal'
+        # Deposit.
+        else:
+            FireflyBase['destination_id'] = FireflyAccountID
+            if Description == 'Round Up' or Description.startswith('Quick save transfer from '):
+                FireflyBase['source_id'] = Accounts[Checking]
+                FireflyBase['type'] = 'transfer'
+            else:
+                FireflyBase['source_name'] = GetSuitableName(UpBase)
+                FireflyBase['type'] = 'deposit'
+
+    # Foreign amount.
+    if UpBase['attributes']['foreignAmount']:
+        Amount = HandleAmount(UpBase['attributes']['foreignAmount'])
+        FireflyBase['foreign_amount'] = Amount[0]
+        FireflyBase['foreign_currency_code'] = Amount[1]
+
+    # Get tags.
+    Tags = []
+    for Tag in UpBase['relationships']['tags']['data']:
+        Tags.append(Tag['id'])
+    if Tags:
+        FireflyBase['tags'] = Tags
+
+    # Category.
+    if UpBase['relationships']['category']['data']:
+        FireflyBase['category_name'] = UpBase['relationships']['category']['data']['id']
+
+    # Notes.
+    Notes = []
+    if UpBase['attributes']['message']:
+        Notes.append(UpBase['attributes']['message'])
+    if UpBase['attributes']['rawText']:
+        Notes.append(UpBase['attributes']['rawText'])
+    if Notes:
+        FireflyBase['notes'] = '\n'.join(Notes)
+
+    JSON = json.dumps(Trans)
+    JSON = JSON.encode()
+
+    # Do upload.
+    URL = '{}/api/v1/transactions'.format(os.environ['FIREFLY_BASEURL'])
+    if not FireflyID:
+        # New.
+        PerformRequest(URL, os.environ['FIREFLY_PAT'], Accept = 'application/vnd.api+json', Method = 'POST', IsJSON = True, Data = JSON)
+        app.logger.info('Transaction %s added.', ID)
+    else:
+        # Update.
+        URL += '/{}'.format(FireflyID)
+        PerformRequest(URL, os.environ['FIREFLY_PAT'], Accept = 'application/vnd.api+json', Method = 'PUT', IsJSON = True, Data = JSON)
+        app.logger.info('Transaction %s updated.', ID)
+
+    return True
 
 def CheckMessageSecure():
     AuthHeader = request.headers.get('X-Up-Authenticity-Signature')
@@ -106,6 +276,7 @@ def CheckMessageSecure():
 
 @app.route('/', methods = ['POST'])
 def index():
+    # API Doc; https://developer.up.com.au/#callback_post_webhookURL
     CheckMessageSecure()
 
     # Valid message. Convert to JSON.
