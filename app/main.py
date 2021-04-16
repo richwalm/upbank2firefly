@@ -144,13 +144,8 @@ def HandleTransaction(Type, Data):
     try:
         ID = Data['data']['id']
     except Exception:
-        app.logger.exception('Transacyytion is missing an ID.')
+        app.logger.exception('Transaction is missing an ID.')
         return False
-
-    FireflyID = None
-    if Type == 'TRANSACTION_SETTLED':
-        # Update if we already have it.
-        FireflyID = SearchFirefly(ID)
 
     # Create the transaction.
     # API Doc; https://api-docs.firefly-iii.org/#/transactions/storeTransaction
@@ -158,63 +153,10 @@ def HandleTransaction(Type, Data):
     FireflyBase = Trans['transactions'][0]
     UpBase = Data['data']
 
-    # Basic infomation.
-    FireflyBase['date'] = FireflyBase['createdAt'] = UpBase['attributes']['createdAt']
-    Description = FireflyBase['description'] = UpBase['attributes']['description']
-    if UpBase['attributes']['status'] == 'SETTLED':
-        FireflyBase['process_date'] = UpBase['attributes']['settledAt']
-
-    # Amount.
-    Amount = HandleAmount(UpBase['attributes']['amount'])
-    FireflyBase['amount'] = Amount[0]
-    FireflyBase['currency_code'] = Amount[1]
-
-    # Source account.
-    FocusAccount = UpBase['relationships']['account']['data']['id']
-    if FocusAccount not in Accounts:
-        raise Exception('Transaction {} has an unknown source account; {}'.format(ID, FocusAccount))
-    FireflyAccountID = Accounts[FocusAccount]
-
-    def GetSuitableName(UpBase):
-        if UpBase['relationships']['category']['data']:
-            return UpBase['relationships']['category']['data']['id']
-        return UpBase['attributes']['description']
-
-    # Handle type.
-    if UpBase['relationships']['transferAccount']['data']:
-        # Transfer.
-        # As we receive two transactions (incoming & outgoing) from Up, we'll disregard the incoming.
-        if Amount[2] > 0:
-            app.logger.info('Disregarding incoming transfer transaction; %s ($%s %s)', ID, Amount[2], Amount[1])
-            return False
-        DestAccount = UpBase['relationships']['transferAccount']['data']['id']
-        if DestAccount not in Accounts:
-            raise Exception('Transaction {} has an unknown destination account; {}'.format(ID, DestAccount))
-        FireflyBase['source_id'] = FireflyAccountID
-        FireflyBase['destination_id'] = Accounts[DestAccount]
-        FireflyBase['type'] = 'transfer'
-    else:
-        # Bit of an API flaw here; https://github.com/up-banking/api/issues/80
-        # Round Up don't appear as transfers.
-        # Withdrawal.
-        if Amount[2] < 0:
-            if Description.startswith('Quick save transfer to '):
-                app.logger.info('Disregarding outgoing save transfer transaction; %s ($%s %s)', ID, Amount[2], Amount[1])
-                return False
-            FireflyBase['source_id'] = FireflyAccountID
-            FireflyBase['destination_name'] = GetSuitableName(UpBase)
-            FireflyBase['amount'] = str(abs(Amount[2]))
-            FireflyBase['type'] = 'withdrawal'
-        # Deposit.
-        else:
-            FireflyBase['destination_id'] = FireflyAccountID
-            if Description == 'Round Up' or Description.startswith('Quick save transfer from '):
-                FireflyBase['category_name'] = 'Savings'
-                FireflyBase['source_id'] = Accounts[Checking]
-                FireflyBase['type'] = 'transfer'
-            else:
-                FireflyBase['source_name'] = GetSuitableName(UpBase)
-                FireflyBase['type'] = 'deposit'
+    # Update if we already have it.
+    FireflyID = None
+    if Type == 'TRANSACTION_SETTLED':
+        FireflyID = SearchFirefly(ID)
 
     # Foreign amount.
     if UpBase['attributes']['foreignAmount']:
@@ -222,25 +164,87 @@ def HandleTransaction(Type, Data):
         FireflyBase['foreign_amount'] = Amount[0]
         FireflyBase['foreign_currency_code'] = Amount[1]
 
-    # Get tags.
-    Tags = []
-    for Tag in UpBase['relationships']['tags']['data']:
-        Tags.append(Tag['id'])
-    if Tags:
-        FireflyBase['tags'] = Tags
+    # Amount.
+    Amount = HandleAmount(UpBase['attributes']['amount'])
+    FireflyBase['amount'] = Amount[0]
+    FireflyBase['currency_code'] = Amount[1]
 
-    # Category.
-    if UpBase['relationships']['category']['data']:
-        FireflyBase['category_name'] = UpBase['relationships']['category']['data']['id']
+    # Settled time.
+    if UpBase['attributes']['status'] == 'SETTLED':
+        FireflyBase['process_date'] = UpBase['attributes']['settledAt']
 
-    # Notes.
-    Notes = []
-    if UpBase['attributes']['message']:
-        Notes.append(UpBase['attributes']['message'])
-    if UpBase['attributes']['rawText']:
-        Notes.append(UpBase['attributes']['rawText'])
-    if Notes:
-        FireflyBase['notes'] = '\n'.join(Notes)
+    # New transaction.
+    if not FireflyID:
+        # Basic infomation.
+        FireflyBase['date'] = FireflyBase['createdAt'] = UpBase['attributes']['createdAt']
+        Description = FireflyBase['description'] = UpBase['attributes']['description']
+
+        # Focus account.
+        FocusAccount = UpBase['relationships']['account']['data']['id']
+        if FocusAccount not in Accounts:
+            raise Exception('Transaction {} has an unknown source account; {}'.format(ID, FocusAccount))
+        FireflyAccountID = Accounts[FocusAccount]
+
+        def GetSuitableName(UpBase):
+            if UpBase['relationships']['category']['data']:
+                return UpBase['relationships']['category']['data']['id']
+            return UpBase['attributes']['description']
+
+        # Handle type.
+        if UpBase['relationships']['transferAccount']['data']:
+            # Transfer.
+            # As we receive two transactions (incoming & outgoing) from Up, we'll disregard the incoming.
+            if Amount[2] > 0:
+                app.logger.info('Disregarding incoming transfer transaction; %s ($%s %s)', ID, Amount[2], Amount[1])
+                return False
+            DestAccount = UpBase['relationships']['transferAccount']['data']['id']
+            if DestAccount not in Accounts:
+                raise Exception('Transaction {} has an unknown destination account; {}'.format(ID, DestAccount))
+            FireflyBase['source_id'] = FireflyAccountID
+            FireflyBase['destination_id'] = Accounts[DestAccount]
+            FireflyBase['type'] = 'transfer'
+        else:
+            # Bit of an API flaw here; https://github.com/up-banking/api/issues/80
+            # Round Up don't appear as transfers.
+            # Withdrawal.
+            if Amount[2] < 0:
+                if Description.startswith('Quick save transfer to '):
+                    app.logger.info('Disregarding outgoing save transfer transaction; %s ($%s %s)', ID, Amount[2], Amount[1])
+                    return False
+                FireflyBase['source_id'] = FireflyAccountID
+                FireflyBase['destination_name'] = GetSuitableName(UpBase)
+                FireflyBase['amount'] = str(abs(Amount[2]))
+                FireflyBase['type'] = 'withdrawal'
+            # Deposit.
+            else:
+                FireflyBase['destination_id'] = FireflyAccountID
+                if Description == 'Round Up' or Description.startswith('Quick save transfer from '):
+                    FireflyBase['category_name'] = 'Savings'
+                    FireflyBase['source_id'] = Accounts[Checking]
+                    FireflyBase['type'] = 'transfer'
+                else:
+                    FireflyBase['source_name'] = GetSuitableName(UpBase)
+                    FireflyBase['type'] = 'deposit'
+
+        # Get tags.
+        Tags = []
+        for Tag in UpBase['relationships']['tags']['data']:
+            Tags.append(Tag['id'])
+        if Tags:
+            FireflyBase['tags'] = Tags
+
+        # Category.
+        if UpBase['relationships']['category']['data']:
+            FireflyBase['category_name'] = UpBase['relationships']['category']['data']['id']
+
+        # Notes.
+        Notes = []
+        if UpBase['attributes']['message']:
+            Notes.append(UpBase['attributes']['message'])
+        if UpBase['attributes']['rawText']:
+            Notes.append(UpBase['attributes']['rawText'])
+        if Notes:
+            FireflyBase['notes'] = '\n'.join(Notes)
 
     JSON = json.dumps(Trans)
     JSON = JSON.encode()
