@@ -1,13 +1,26 @@
 #!/bin/sh
 . ./.env
+ERR=0
 
 # Up Bank
-curl https://api.up.com.au/api/v1/util/ping \
+if curl https://api.up.com.au/api/v1/util/ping \
 -H "Authorization: Bearer $UPBANK_PAT" \
--s -f
+-s -f -o /dev/null; then
+	echo Up API reachable.
+else
+	echo Failed to connect to UP API.
+	ERR=1
+fi
 
 # Firefly
-curl "$FIREFLY_BASEURL/api/v1/configuration" \
+if curl "$FIREFLY_BASEURL/api/v1/configuration" \
 -H "Accept: application/json" \
 -H "Authorization: Bearer $FIREFLY_PAT" \
--s -f
+-s -f -o /dev/null; then
+	echo Firefly API reachable.
+else
+	echo Failed to connect to Firefly API.
+	ERR=1
+fi
+
+return $ERR
