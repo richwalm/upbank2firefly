@@ -24,6 +24,8 @@ Timeout = 10
 Accounts = {}
 Checking = None
 
+CategoryIDs = {}
+
 def SetupAccountMapping():
     global Checking
 
@@ -70,6 +72,7 @@ def PerformRequest(URL, PAT, Accept = None, Method = None, IsJSON = False, Data 
             Reponse = Resp.read()
     except urllib.error.HTTPError as e:
         app.logger.exception('Got HTTP status code %s while %s\'ing; %s', e.code, Method or 'GET', URL)
+        print('Error;', e.read())
         return None, True
     except json.JSONDecodeError:
         app.logger.exception('Expected JSON is not valid; %s', URL)
@@ -79,6 +82,25 @@ def PerformRequest(URL, PAT, Accept = None, Method = None, IsJSON = False, Data 
         return None, False
 
     return Reponse, None
+
+def ReadCategories(JSON):
+    Categories = JSON['data'][0]
+
+    for Category in Categories:
+        ID = Category['id']
+        Name = Category['attributes']['name']
+
+        CategoryIDs[ID] = Name
+
+def GetCategoryName(ID):
+    if ID in CategoryIDs:
+        return CategoryIDs[ID]
+
+    Resp = PerformRequest('https://api.up.com.au/api/v1/categories', os.environ['UPBANK_PAT'], IsJSON = True)
+    if Resp[0]:
+        ReadCategories(Resp[0])
+
+    return CategoryIDs.get(ID, ID)   # Shouldn't occur but just return the ID. It's better than nothing.
 
 def SearchFirefly(ID):
     # API Doc; https://api-docs.firefly-iii.org/#/search/searchTransactions
@@ -182,7 +204,7 @@ def HandleTransaction(Type, Data):
         # Category.
         Category = None
         if UpBase['relationships']['category']['data']:
-            Category = UpBase['relationships']['category']['data']['id']
+            Category = GetCategoryName(UpBase['relationships']['category']['data']['id'])
 
         # Focus account.
         FocusAccount = UpBase['relationships']['account']['data']['id']
