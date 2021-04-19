@@ -179,16 +179,16 @@ def HandleTransaction(Type, Data):
         FireflyBase['date'] = FireflyBase['createdAt'] = UpBase['attributes']['createdAt']
         Description = FireflyBase['description'] = UpBase['attributes']['description']
 
+        # Category.
+        Category = None
+        if UpBase['relationships']['category']['data']:
+            Category = UpBase['relationships']['category']['data']['id']
+
         # Focus account.
         FocusAccount = UpBase['relationships']['account']['data']['id']
         if FocusAccount not in Accounts:
             raise Exception('Transaction {} has an unknown source account; {}'.format(ID, FocusAccount))
         FireflyAccountID = Accounts[FocusAccount]
-
-        def GetSuitableName(UpBase):
-            if UpBase['relationships']['category']['data']:
-                return UpBase['relationships']['category']['data']['id']
-            return UpBase['attributes']['description']
 
         # Handle type.
         if UpBase['relationships']['transferAccount']['data']:
@@ -204,38 +204,38 @@ def HandleTransaction(Type, Data):
             FireflyBase['destination_id'] = Accounts[DestAccount]
             FireflyBase['type'] = 'transfer'
         else:
-            # Bit of an API flaw here; https://github.com/up-banking/api/issues/80
-            # Round Up don't appear as transfers.
+            # Bit of an API limitation here; https://github.com/up-banking/api/issues/80
+            # Round Up and Save Transfers don't appear as transfers.
             # Withdrawal.
             if Amount[2] < 0:
                 if Description.startswith('Quick save transfer to '):
                     app.logger.info('Disregarding outgoing save transfer transaction; %s ($%s %s)', ID, Amount[2], Amount[1])
                     return False
                 FireflyBase['source_id'] = FireflyAccountID
-                FireflyBase['destination_name'] = GetSuitableName(UpBase)
+                FireflyBase['destination_name'] = Category or Description
                 FireflyBase['amount'] = str(abs(Amount[2]))
                 FireflyBase['type'] = 'withdrawal'
             # Deposit.
             else:
                 FireflyBase['destination_id'] = FireflyAccountID
                 if Description == 'Round Up' or Description.startswith('Quick save transfer from '):
-                    FireflyBase['category_name'] = 'Savings'
+                    Category = 'Savings'
                     FireflyBase['source_id'] = Accounts[Checking]
                     FireflyBase['type'] = 'transfer'
                 else:
-                    FireflyBase['source_name'] = GetSuitableName(UpBase)
+                    FireflyBase['source_name'] = Category or Description
                     FireflyBase['type'] = 'deposit'
 
-        # Get tags.
         Tags = []
+        if Category != 'Savings':
+            Tags.append(Description)
         for Tag in UpBase['relationships']['tags']['data']:
             Tags.append(Tag['id'])
-        if Tags:
-            FireflyBase['tags'] = Tags
+        FireflyBase['tags'] = Tags
 
         # Category.
-        if UpBase['relationships']['category']['data']:
-            FireflyBase['category_name'] = UpBase['relationships']['category']['data']['id']
+        if Category:
+            FireflyBase['category_name'] = Category
 
         # Notes.
         Notes = []
