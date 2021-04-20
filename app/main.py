@@ -84,7 +84,7 @@ def PerformRequest(URL, PAT, Accept = None, Method = None, IsJSON = False, Data 
     return Reponse, None
 
 def ReadCategories(JSON):
-    Categories = JSON['data'][0]
+    Categories = JSON['data']
 
     for Category in Categories:
         ID = Category['id']
@@ -180,16 +180,11 @@ def HandleTransaction(Type, Data):
     if Type == 'TRANSACTION_SETTLED':
         FireflyID = SearchFirefly(ID)
 
-    # Foreign amount.
-    if UpBase['attributes']['foreignAmount']:
-        Amount = HandleAmount(UpBase['attributes']['foreignAmount'])
-        FireflyBase['foreign_amount'] = Amount[0]
-        FireflyBase['foreign_currency_code'] = Amount[1]
-
-    # Amount.
+    # Amounts.
     Amount = HandleAmount(UpBase['attributes']['amount'])
-    FireflyBase['amount'] = Amount[0]
-    FireflyBase['currency_code'] = Amount[1]
+    ForeignAmount = None
+    if UpBase['attributes']['foreignAmount']:
+        ForeignAmount = HandleAmount(UpBase['attributes']['foreignAmount'])
 
     # Settled time.
     if UpBase['attributes']['status'] == 'SETTLED':
@@ -235,7 +230,6 @@ def HandleTransaction(Type, Data):
                     return False
                 FireflyBase['source_id'] = FireflyAccountID
                 FireflyBase['destination_name'] = Category or Description
-                FireflyBase['amount'] = str(abs(Amount[2]))
                 FireflyBase['type'] = 'withdrawal'
             # Deposit.
             else:
@@ -267,6 +261,17 @@ def HandleTransaction(Type, Data):
             Notes.append(UpBase['attributes']['rawText'])
         if Notes:
             FireflyBase['notes'] = '\n'.join(Notes)
+
+    # Amounts.
+    # Withdrawals require a positive number in Firefly.
+    if not UpBase['relationships']['transferAccount']['data']:
+        FireflyBase['amount'] = str(abs(Amount[2]))
+        if ForeignAmount:
+            FireflyBase['foreignAmount'] = str(abs(ForeignAmount[2]))
+    else:
+        FireflyBase['amount'] = str(Amount[2])
+        if ForeignAmount:
+            FireflyBase['foreignAmount'] = str(ForeignAmount[2])
 
     JSON = json.dumps(Trans)
     JSON = JSON.encode()
