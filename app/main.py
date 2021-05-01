@@ -239,11 +239,13 @@ def HandleTransaction(Type, Data):
                     FireflyBase['source_id'] = Accounts[Checking]
                     FireflyBase['type'] = 'transfer'
                 else:
+                    if Description == 'Interest':
+                        Category = 'Interest'
                     FireflyBase['source_name'] = Category or Description
                     FireflyBase['type'] = 'deposit'
 
         Tags = []
-        if Category != 'Savings':
+        if Category not in {'Savings', 'Interest'}:
             Tags.append(Description)
         for Tag in UpBase['relationships']['tags']['data']:
             Tags.append(Tag['id'])
