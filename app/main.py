@@ -158,6 +158,14 @@ def HandleAmount(Amount):
 
     return Amount['value'], Amount['currencyCode'], IntPrice
 
+# Due to Firefly issue #3338, the time part of dates is removed on edits.
+# Therefore, to keep transactions in the same order, we'll strip them off here.
+def HandleDate(DateString):
+    TimeStart = DateString.find('T')
+    if TimeStart < 0:
+        return DateString
+    return DateString[:TimeStart]
+
 def HandleTransaction(Type, Data):
     app.logger.info('Received a %s message to process.', Type)
 
@@ -188,12 +196,12 @@ def HandleTransaction(Type, Data):
 
     # Settled time.
     if UpBase['attributes']['status'] == 'SETTLED':
-        FireflyBase['process_date'] = UpBase['attributes']['settledAt']
+        FireflyBase['process_date'] = HandleDate(UpBase['attributes']['settledAt'])
 
     # New transaction.
     if not FireflyID:
         # Basic infomation.
-        FireflyBase['date'] = FireflyBase['createdAt'] = UpBase['attributes']['createdAt']
+        FireflyBase['date'] = FireflyBase['createdAt'] = HandleDate(UpBase['attributes']['createdAt'])
         Description = FireflyBase['description'] = UpBase['attributes']['description']
 
         # Category.
