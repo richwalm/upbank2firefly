@@ -274,14 +274,9 @@ def HandleTransaction(Type, Data):
 
     # Amounts.
     # Withdrawals require a positive number in Firefly.
-    if not UpBase['relationships']['transferAccount']['data']:
-        FireflyBase['amount'] = str(abs(Amount[2]))
-        if ForeignAmount:
-            FireflyBase['foreignAmount'] = str(abs(ForeignAmount[2]))
-    else:
-        FireflyBase['amount'] = str(Amount[2])
-        if ForeignAmount:
-            FireflyBase['foreignAmount'] = str(ForeignAmount[2])
+    FireflyBase['amount'] = str(abs(Amount[2]))
+    if ForeignAmount:
+        FireflyBase['foreignAmount'] = str(abs(ForeignAmount[2]))
 
     JSON = json.dumps(Trans)
     JSON = JSON.encode()
