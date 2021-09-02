@@ -218,9 +218,9 @@ def HandleTransaction(Type, Data):
         # Handle type.
         if UpBase['relationships']['transferAccount']['data']:
             # Transfer.
-            # As we receive two transactions (incoming & outgoing) from Up, we'll disregard the incoming.
-            if Amount[2] > 0:
-                app.logger.info('Disregarding incoming transfer transaction; %s ($%s %s)', ID, Amount[2], Amount[1])
+            # As we receive two transactions (incoming & outgoing) from Up, we'll disregard the outgoing.
+            if Amount[2] < 0:
+                app.logger.info('Disregarding outgoing transfer transaction; %s ($%s %s)', ID, Amount[2], Amount[1])
                 return False
             DestAccount = UpBase['relationships']['transferAccount']['data']['id']
             if DestAccount not in Accounts:
@@ -229,28 +229,18 @@ def HandleTransaction(Type, Data):
             FireflyBase['destination_id'] = Accounts[DestAccount]
             FireflyBase['type'] = 'transfer'
         else:
-            # Bit of an API limitation here; https://github.com/up-banking/api/issues/80
-            # Round Up and Save Transfers don't appear as transfers.
             # Withdrawal.
             if Amount[2] < 0:
-                if Description.startswith('Quick save transfer to '):
-                    app.logger.info('Disregarding outgoing save transfer transaction; %s ($%s %s)', ID, Amount[2], Amount[1])
-                    return False
                 FireflyBase['source_id'] = FireflyAccountID
                 FireflyBase['destination_name'] = Category or Description
                 FireflyBase['type'] = 'withdrawal'
             # Deposit.
             else:
                 FireflyBase['destination_id'] = FireflyAccountID
-                if Description == 'Round Up' or Description.startswith('Quick save transfer from '):
-                    Category = 'Savings'
-                    FireflyBase['source_id'] = Accounts[Checking]
-                    FireflyBase['type'] = 'transfer'
-                else:
-                    if Description == 'Interest':
-                        Category = 'Interest'
-                    FireflyBase['source_name'] = Category or Description
-                    FireflyBase['type'] = 'deposit'
+                if Description == 'Interest':
+                    Category = 'Interest'
+                FireflyBase['source_name'] = Category or Description
+                FireflyBase['type'] = 'deposit'
 
         Tags = []
         if Category not in {'Savings', 'Interest'}:
