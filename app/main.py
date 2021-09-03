@@ -141,7 +141,7 @@ def DeleteTransaction(ID):
         return False
 
     # API Doc; https://api-docs.firefly-iii.org/#/transactions/deleteTransaction
-    URL = '{}/api/v1/transaction/{}'.format(os.environ['FIREFLY_BASEURL'], FireflyID)
+    URL = '{}/api/v1/transactions/{}'.format(os.environ['FIREFLY_BASEURL'], FireflyID)
     Data = PerformRequest(URL, os.environ['FIREFLY_PAT'], None, 'DELETE')
     if not Data[0]:
         return False
@@ -225,8 +225,8 @@ def HandleTransaction(Type, Data):
             DestAccount = UpBase['relationships']['transferAccount']['data']['id']
             if DestAccount not in Accounts:
                 raise Exception('Transaction {} has an unknown destination account; {}'.format(ID, DestAccount))
-            FireflyBase['source_id'] = FireflyAccountID
-            FireflyBase['destination_id'] = Accounts[DestAccount]
+            FireflyBase['source_id'] = Accounts[DestAccount]
+            FireflyBase['destination_id'] = FireflyAccountID
             FireflyBase['type'] = 'transfer'
         else:
             # Withdrawal.
