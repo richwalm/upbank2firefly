@@ -1,13 +1,11 @@
 version: '3'
 services:
   upbank2firefly:
-    build: ./
+    build: .
     volumes:
       - ./app:/app
     ports:
       - "127.0.0.1:8083:80"
-    environment:
-      - TZ=Australia/Perth
     env_file:
       - .env
     restart: always

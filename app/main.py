@@ -20,7 +20,10 @@ if 'FIREFLY_BASEURL' not in os.environ:
 if 'ACCOUNT_MAPPING' not in os.environ:
     raise Exception('You need to define ACCOUNT_MAPPING.')
 
-Timeout = 10
+Timeout = os.environ.get('REQUEST_TIMEOUT', 10)
+if Timeout > 30:
+    raise Exception('Timeout is larger than what Up recommends.')
+
 Accounts = {}
 Checking = None
 
@@ -392,4 +395,4 @@ def index():
     return 'THANKS'
 
 if __name__ == '__main__':
-    app.run(host = '0.0.0.0', debug = True, port = 80)
+    app.run(host = '0.0.0.0', port = 80)
