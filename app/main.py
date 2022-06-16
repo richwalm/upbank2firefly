@@ -20,7 +20,7 @@ if 'FIREFLY_BASEURL' not in os.environ:
 if 'ACCOUNT_MAPPING' not in os.environ:
     raise Exception('You need to define ACCOUNT_MAPPING.')
 
-Timeout = os.environ.get('REQUEST_TIMEOUT', 10)
+Timeout = int(os.environ.get('REQUEST_TIMEOUT', 10))
 if Timeout > 30:
     raise Exception('Timeout is larger than what Up recommends.')
 
