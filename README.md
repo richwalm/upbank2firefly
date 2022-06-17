@@ -35,24 +35,6 @@ location /upbank2firefly/ {
 }
 ```
 
-## Debugging Routes
-
-If you provide a `DEBUG_PAT` in `.env`, you are able to use it with two routes to manually update and delete transactions from Up.
-
-### Updating/Creation
-
-```
-curl https://firefly.example.org/upbank2firefly/get/$UP_TRANSACTION_ID \
-  -H "Authorization: Bearer $DEBUG_PAT"
-```
-
-### Deleting
-
-```
-curl https://firefly.example.org/upbank2firefly/delete/$UP_TRANSACTION_ID \
-  -H "Authorization: Bearer $DEBUG_PAT"
-```
-
 ## Credits
 
 Written by Richard Walmsley \<richwalm+upbank2firefly@gmail.com\>. Released under the [ISC License](LICENSE.txt).

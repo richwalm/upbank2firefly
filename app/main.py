@@ -5,6 +5,7 @@ import os
 import hmac
 import urllib.request
 import json
+import click
 
 app = Flask(__name__)
 app.logger.setLevel(logging.INFO)
@@ -130,26 +131,40 @@ def SearchFirefly(ID):
     try:
         FireflyID = JSON['data'][0]['id']
     except Exception:
-        app.logger.exception('Failed to extract ID from Firefly\'s search results for external_id; %s', ID)
+        app.logger.exception('Failed to extract Firefly transaction ID from Firefly\'s search results for external_id; %s', ID)
         return
 
-    return FireflyID
+    try:
+        Splits = JSON['data'][0]['attributes']['transactions']
+    except Exception:
+        app.logger.exception('Failed to extract splits from Firefly\'s search results for Firefly transaction ID; %s', FireflyID)
+        return
+    if len(Splits) > 1:
+        app.logger.warning('Firefly transaction ID %s has multiple splits. Using the first.', FireflyID)
+
+    try:
+        JournalID = Splits[0]['transaction_journal_id']
+    except Exception:
+        app.logger.exception('Failed to extract split journal ID from Firefly\'s search results for Firefly transaction ID; %s', FireflyID)
+        return
+
+    return FireflyID, JournalID
 
 def DeleteTransaction(ID):
     app.logger.info('Received a delete message for ID; %s', ID)
 
     # Search for the Up ID in Firefly.
-    FireflyID = SearchFirefly(ID)
-    if not FireflyID:
+    IDs = SearchFirefly(ID)
+    if not IDs:
         return False
 
     # API Doc; https://api-docs.firefly-iii.org/#/transactions/deleteTransaction
-    URL = '{}/api/v1/transactions/{}'.format(os.environ['FIREFLY_BASEURL'], FireflyID)
+    URL = '{}/api/v1/transactions/{}'.format(os.environ['FIREFLY_BASEURL'], IDs[0])
     Data = PerformRequest(URL, os.environ['FIREFLY_PAT'], None, 'DELETE')
     if not Data[0]:
         return False
 
-    app.logger.info('Successfully deleted transaction %s (Up ID %s)', FireflyID, ID)
+    app.logger.info('Successfully deleted Firefly transaction %s (Up ID %s)', IDs[0], ID)
     return True
 
 def HandleAmount(Amount):
@@ -189,7 +204,10 @@ def HandleTransaction(Type, Data):
     # Update if we already have it.
     FireflyID = None
     if Type == 'TRANSACTION_SETTLED':
-        FireflyID = SearchFirefly(ID)
+        IDs = SearchFirefly(ID)
+        if IDs:
+            FireflyID = IDs[0]
+            FireflyBase['transaction_journal_id'] = IDs[1]
 
     # Amounts.
     Amount = HandleAmount(UpBase['attributes']['amount'])
@@ -278,40 +296,38 @@ def HandleTransaction(Type, Data):
     URL = '{}/api/v1/transactions'.format(os.environ['FIREFLY_BASEURL'])
     if not FireflyID:
         # New.
-        PerformRequest(URL, os.environ['FIREFLY_PAT'], Accept = 'application/vnd.api+json', Method = 'POST', IsJSON = True, Data = JSON)
+        Return = PerformRequest(URL, os.environ['FIREFLY_PAT'], Accept = 'application/vnd.api+json', Method = 'POST', IsJSON = True, Data = JSON)
+        if not Return[0]:
+            return False
         app.logger.info('Transaction %s added.', ID)
     else:
         # Update.
         URL += '/{}'.format(FireflyID)
-        PerformRequest(URL, os.environ['FIREFLY_PAT'], Accept = 'application/vnd.api+json', Method = 'PUT', IsJSON = True, Data = JSON)
+        Return = PerformRequest(URL, os.environ['FIREFLY_PAT'], Accept = 'application/vnd.api+json', Method = 'PUT', IsJSON = True, Data = JSON)
+        if not Return[0]:
+            return False
         app.logger.info('Transaction %s updated.', ID)
 
     return True
 
-""" Debuging route. """
-def CheckDebug():
-    AuthHeader = request.headers.get('Authorization')
-    Token = os.environ.get('DEBUG_PAT')
-    if not (AuthHeader and Token and AuthHeader == 'Bearer ' + Token):
-        abort(403)
-
-@app.route('/get/<ID>')
-def get(ID):
-    CheckDebug()
-    URL = 'https://api.up.com.au/api/v1/transactions/' + ID
+""" Command line interfaces. """
+@app.cli.command('get')
+@click.argument('id')
+def get(id):
+    URL = 'https://api.up.com.au/api/v1/transactions/' + id
     Data = PerformRequest(URL, os.environ['UPBANK_PAT'], IsJSON = True)
     if not Data[0]:
-        return 'FAILED TO DOWNLOAD', 500
+        return 1
     if not HandleTransaction('TRANSACTION_SETTLED', Data[0]):
-        return 'ERROR', 500
-    return 'OK'
+        return 1
+    return
 
-@app.route('/delete/<ID>')
-def delete(ID):
-    CheckDebug()
-    if not DeleteTransaction(ID):
-        return 'ERROR', 500
-    return 'OK'
+@app.cli.command('delete')
+@click.argument('id')
+def delete(id):
+    if not DeleteTransaction(id):
+        return 1
+    return
 
 """ Primary route. """
 def CheckMessageSecure():
