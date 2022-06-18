@@ -7,11 +7,13 @@ if [ $# -lt 2 ]; then
 fi
 case $1 in
 	up)
+		# https://developer.up.com.au/
 		OUTPUT=$(curl https://api.up.com.au/api/v1/"$2" \
 		-H "Authorization: Bearer $UPBANK_PAT" \
 		-s -f)
 		;;
 	firefly)
+		# https://api-docs.firefly-iii.org/
 		OUTPUT=$(curl "$FIREFLY_BASEURL"/api/v1/"$2" \
 		-H "Accept: application/json" \
 		-H "Authorization: Bearer $FIREFLY_PAT" \

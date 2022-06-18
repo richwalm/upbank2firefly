@@ -5,7 +5,9 @@ import os
 import hmac
 import urllib.request
 import json
+# For the CLI.
 import click
+import urllib.parse
 
 app = Flask(__name__)
 app.logger.setLevel(logging.INFO)
@@ -151,8 +153,6 @@ def SearchFirefly(ID):
     return FireflyID, JournalID
 
 def DeleteTransaction(ID):
-    app.logger.info('Received a delete message for ID; %s', ID)
-
     # Search for the Up ID in Firefly.
     IDs = SearchFirefly(ID)
     if not IDs:
@@ -184,13 +184,11 @@ def HandleDate(DateString):
         return DateString
     return DateString[:TimeStart]
 
-def HandleTransaction(Type, Data):
-    app.logger.info('Received a %s message to process.', Type)
-
-    # API Doc; https://developer.up.com.au/#get_transactions_id
+def HandleTransaction(Type, UpBase):
+    # Schema Doc; https://developer.up.com.au/#get_transactions_id
 
     try:
-        ID = Data['data']['id']
+        ID = UpBase['id']
     except Exception:
         app.logger.exception('Transaction is missing an ID.')
         return False
@@ -199,7 +197,6 @@ def HandleTransaction(Type, Data):
     # API Doc; https://api-docs.firefly-iii.org/#/transactions/storeTransaction
     Trans = {'transactions': [ {'external_id': ID} ]}
     FireflyBase = Trans['transactions'][0]
-    UpBase = Data['data']
 
     # Update if we already have it.
     FireflyID = None
@@ -312,7 +309,7 @@ def HandleTransaction(Type, Data):
 
 """ Command line interface. """
 @app.cli.command('get')
-@click.argument('ids', nargs = -1)
+@click.argument('ids', type = click.UUID, nargs = -1)
 def get(ids):
     """ Get transactions with Up transaction IDs. """
     Count = 0
@@ -321,12 +318,12 @@ def get(ids):
         Data = PerformRequest(URL, os.environ['UPBANK_PAT'], IsJSON = True)
         if not Data[0]:
             continue
-        Count +=  HandleTransaction('TRANSACTION_SETTLED', Data[0])
+        Count += HandleTransaction('TRANSACTION_SETTLED', Data[0]['data'])
     click.echo(f"Obtained {Count} transaction(s).")
     return Count
 
 @app.cli.command('delete')
-@click.argument('ids', nargs = -1)
+@click.argument('ids', type = click.UUID, nargs = -1)
 def delete(ids):
     """ Delete transactions with Up transaction IDs. """
     Count = 0
@@ -334,6 +331,47 @@ def delete(ids):
         Count += DeleteTransaction(ID)
     click.echo(f"Deleted {Count} transaction(s).")
     return Count
+
+@app.cli.command('getall')
+@click.option('-a', '--account-id', type = click.UUID, help = 'Limit to only this account\'s tranactions.')
+@click.option('-s', '--since', type = click.DateTime(), help = 'Only transactions since this timestamp.')
+@click.option('-u', '--until', type = click.DateTime(), help = 'Only transactions until this timestamp.')
+@click.option('-o', '--output-only', is_flag = True, help = 'Print Up transactions IDs only. Don\'t add to Firefly.')
+def getaccount(account_id, since, until, output_only):
+    """ Obtains all transactions. """
+    if not account_id:
+        URL = 'https://api.up.com.au/api/v1/transactions'
+    else:
+        URL = 'https://api.up.com.au/api/v1/accounts/{}/transactions'.format(account_id)
+
+    if since or until:
+        if since and until and since > until:
+            raise click.ClickException('Since ({}) is later than Until ({}).'.format(since, until))
+        Params = {}
+        if since:
+            Params['filter[since]'] = since.astimezone().isoformat(timespec = 'seconds')
+        if until:
+            Params['filter[until]'] = until.astimezone().isoformat(timespec = 'seconds')
+        Params = urllib.parse.urlencode(Params)
+        URL += '?' + Params
+
+    while URL:
+        Data = PerformRequest(URL, os.environ['UPBANK_PAT'], IsJSON = True)
+        if not Data[0]:
+            click.echo("Failed to download transactions.")
+            return 1
+
+        JSON = Data[0]
+
+        for Transaction in JSON['data']:
+            if output_only:
+                click.echo(Transaction['id'])
+            else:
+                HandleTransaction('TRANSACTION_SETTLED', Transaction)
+
+        URL = JSON['links']['next']
+
+    return 1
 
 """ Primary route. """
 def CheckMessageSecure():
@@ -393,9 +431,10 @@ def index():
 
         # Since we've gotten initial valid data from Up, return success from this point forward.
         try:
-            HandleTransaction(Type, Data[0])
+            HandleTransaction(Type, Data[0]['data'])
         except Exception:
             app.logger.exception('Failed while processing %s transaction.', Type)
+        app.logger.info('Received a %s message to process.', Type)
 
     elif Type == 'TRANSACTION_DELETED':
         try:
@@ -409,6 +448,7 @@ def index():
             DeleteTransaction(TransactionID)
         except Exception:
             app.logger.exception('Failed while processing delete transaction for %s.', TransactionID)
+        app.logger.info('Received a delete message for ID; %s', ID)
 
     else:
         app.logger.error('Unexpected resource event type; %s', Type)
