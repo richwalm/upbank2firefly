@@ -310,24 +310,30 @@ def HandleTransaction(Type, Data):
 
     return True
 
-""" Command line interfaces. """
+""" Command line interface. """
 @app.cli.command('get')
-@click.argument('id')
-def get(id):
-    URL = 'https://api.up.com.au/api/v1/transactions/' + id
-    Data = PerformRequest(URL, os.environ['UPBANK_PAT'], IsJSON = True)
-    if not Data[0]:
-        return 1
-    if not HandleTransaction('TRANSACTION_SETTLED', Data[0]):
-        return 1
-    return
+@click.argument('ids', nargs = -1)
+def get(ids):
+    """ Get transactions with Up transaction IDs. """
+    Count = 0
+    for ID in ids:
+        URL = 'https://api.up.com.au/api/v1/transactions/' + ID
+        Data = PerformRequest(URL, os.environ['UPBANK_PAT'], IsJSON = True)
+        if not Data[0]:
+            continue
+        Count +=  HandleTransaction('TRANSACTION_SETTLED', Data[0])
+    click.echo(f"Obtained {Count} transaction(s).")
+    return Count
 
 @app.cli.command('delete')
-@click.argument('id')
-def delete(id):
-    if not DeleteTransaction(id):
-        return 1
-    return
+@click.argument('ids', nargs = -1)
+def delete(ids):
+    """ Delete transactions with Up transaction IDs. """
+    Count = 0
+    for ID in ids:
+        Count += DeleteTransaction(ID)
+    click.echo(f"Deleted {Count} transaction(s).")
+    return Count
 
 """ Primary route. """
 def CheckMessageSecure():
