@@ -1,0 +1,30 @@
+#!/bin/sh
+. ./.env
+
+if [ $# -lt 2 ]; then
+	echo "Usage; $0 service trailingurl"
+	exit 2
+fi
+case $1 in
+	up)
+		OUTPUT=$(curl https://api.up.com.au/api/v1/"$2" \
+		-H "Authorization: Bearer $UPBANK_PAT" \
+		-s -f)
+		;;
+	firefly)
+		OUTPUT=$(curl "$FIREFLY_BASEURL"/api/v1/"$2" \
+		-H "Accept: application/json" \
+		-H "Authorization: Bearer $FIREFLY_PAT" \
+		-s -f)
+		;;
+	*)
+		echo "Unknown service. Must be up or firefly."
+		exit 2
+		;;
+esac
+if [ $? -ne 0 ]; then
+	echo "Curl download failed."
+	exit 1
+fi
+echo "$OUTPUT" | python -m json.tool
+
