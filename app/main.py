@@ -161,7 +161,7 @@ def DeleteTransaction(ID):
     # API Doc; https://api-docs.firefly-iii.org/#/transactions/deleteTransaction
     URL = '{}/api/v1/transactions/{}'.format(os.environ['FIREFLY_BASEURL'], IDs[0])
     Data = PerformRequest(URL, os.environ['FIREFLY_PAT'], None, 'DELETE')
-    if not Data[0]:
+    if not Data[0] and Data[1] != None:
         return False
 
     app.logger.info('Successfully deleted Firefly transaction %s (Up ID %s)', IDs[0], ID)
@@ -314,7 +314,7 @@ def get(ids):
     """ Get transactions with Up transaction IDs. """
     Count = 0
     for ID in ids:
-        URL = 'https://api.up.com.au/api/v1/transactions/' + ID
+        URL = 'https://api.up.com.au/api/v1/transactions/' + str(ID)
         Data = PerformRequest(URL, os.environ['UPBANK_PAT'], IsJSON = True)
         if not Data[0]:
             continue
