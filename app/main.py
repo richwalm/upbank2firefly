@@ -168,13 +168,8 @@ def DeleteTransaction(ID):
     return True
 
 def HandleAmount(Amount):
-    IntPrice = Amount['valueInBaseUnits'] / 100
-    StringPrice = float(Amount['value'])
-
-    if IntPrice != StringPrice:
-        raise Exception('Up amount values don\'t match. {} != {}'.format(IntPrice, StringPrice))
-
-    return Amount['value'], Amount['currencyCode'], IntPrice
+    BasePrice = float(Amount['value'])
+    return Amount['value'], Amount['currencyCode'], BasePrice
 
 # Due to Firefly issue #3338, the time part of dates is removed on edits.
 # Therefore, to keep transactions in the same order, we'll strip them off here.
@@ -448,7 +443,7 @@ def index():
             DeleteTransaction(TransactionID)
         except Exception:
             app.logger.exception('Failed while processing delete transaction for %s.', TransactionID)
-        app.logger.info('Received a delete message for ID; %s', ID)
+        app.logger.info('Received a delete message for ID; %s', TransactionID)
 
     else:
         app.logger.error('Unexpected resource event type; %s', Type)
