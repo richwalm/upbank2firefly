@@ -207,6 +207,16 @@ def HandleTransaction(Type, UpBase):
     if UpBase['attributes']['foreignAmount']:
         ForeignAmount = HandleAmount(UpBase['attributes']['foreignAmount'])
 
+    # Cashback.
+    if UpBase['attributes']['cashback']:
+        CashbackAmount = HandleAmount(UpBase['attributes']['cashback']['amount'])
+        NewAmount = Amount[2] + CashbackAmount[2]
+        if NewAmount == 0:
+            app.logger.info('Disregarding full cashback transaction; %s ($%s %s). Reason; %s', ID, Amount[2], Amount[1],
+                UpBase['attributes']['cashback']['description'])
+            return False
+        Amount = (Amount[0], Amount[1], NewAmount)
+
     # Settled time.
     if UpBase['attributes']['status'] == 'SETTLED':
         FireflyBase['process_date'] = HandleDate(UpBase['attributes']['settledAt'])
