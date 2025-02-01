@@ -111,7 +111,7 @@ def GetCategoryName(ID):
 def SearchFirefly(ID):
     # API Doc; https://api-docs.firefly-iii.org/#/search/searchTransactions
     URL = '{}/api/v1/search/transactions?query=external_id:{}'.format(os.environ['FIREFLY_BASEURL'], ID)
-    Data = PerformRequest(URL, os.environ['FIREFLY_PAT'], 'application/vnd.api+json', IsJSON = True)
+    Data = PerformRequest(URL, os.environ['FIREFLY_PAT'], 'application/json', IsJSON = True)
     if not Data[0]:
         return
 
@@ -298,14 +298,14 @@ def HandleTransaction(Type, UpBase):
     URL = '{}/api/v1/transactions'.format(os.environ['FIREFLY_BASEURL'])
     if not FireflyID:
         # New.
-        Return = PerformRequest(URL, os.environ['FIREFLY_PAT'], Accept = 'application/vnd.api+json', Method = 'POST', IsJSON = True, Data = JSON)
+        Return = PerformRequest(URL, os.environ['FIREFLY_PAT'], Accept = 'application/json', Method = 'POST', IsJSON = True, Data = JSON)
         if not Return[0]:
             return False
         app.logger.info('Transaction %s added.', ID)
     else:
         # Update.
         URL += '/{}'.format(FireflyID)
-        Return = PerformRequest(URL, os.environ['FIREFLY_PAT'], Accept = 'application/vnd.api+json', Method = 'PUT', IsJSON = True, Data = JSON)
+        Return = PerformRequest(URL, os.environ['FIREFLY_PAT'], Accept = 'application/json', Method = 'PUT', IsJSON = True, Data = JSON)
         if not Return[0]:
             return False
         app.logger.info('Transaction %s updated.', ID)
