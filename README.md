@@ -37,6 +37,17 @@ location /upbank2firefly/ {
 }
 ```
 
+#### Caddy Example
+
+```
+@firefly host firefly.example.org
+handle @firefly {
+	handle_path /upbank2firefly/* {
+		reverse_proxy 127.0.0.1:8083
+	}
+}
+```
+
 ## Command Line Interface
 
 The command options can be executed through Docker Compose with;
