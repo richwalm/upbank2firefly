@@ -14,7 +14,7 @@ When using the provided `docker-compose.yml` file, core settings are to be provi
 
 Once settings have been configured, the container can be started with;
 ```
-docker-compose build && docker-compose up -d
+docker compose build && docker compose up -d
 ```
 
 It's recommended that Firefly is running on the same host or network as Up Bank requests that webhook responses are performed quickly. No asynchronously processing is currently performed.
@@ -40,7 +40,7 @@ location /upbank2firefly/ {
 ## Command Line Interface
 
 The command options can be executed through Docker Compose with;
-`docker-compose exec -e FLASK_APP=main upbank2firefly flask [command]`
+`docker compose exec -e FLASK_APP=main upbank2firefly flask [command]`
 
 ### Get
 
