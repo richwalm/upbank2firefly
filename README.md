@@ -51,7 +51,7 @@ handle @firefly {
 ## Command Line Interface
 
 The command options can be executed through Docker Compose with;
-`docker compose exec -e FLASK_APP=main upbank2firefly flask [command]`
+`docker compose exec -e FLASK_APP=app.main upbank2firefly flask [command]`
 
 ### Get
 
