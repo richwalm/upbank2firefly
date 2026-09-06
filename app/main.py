@@ -168,8 +168,9 @@ def DeleteTransaction(ID):
     return True
 
 def HandleAmount(Amount):
-    BasePrice = float(Amount['value'])
-    return Amount['value'], Amount['currencyCode'], BasePrice
+    Value = Amount['value']
+    BasePrice = float(Value.replace(',', '.'))
+    return Value, Amount['currencyCode'], BasePrice
 
 # Due to Firefly issue #3338, the time part of dates is removed on edits.
 # Therefore, to keep transactions in the same order, we'll strip them off here.
