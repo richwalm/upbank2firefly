@@ -28,5 +28,5 @@ if [ $? -ne 0 ]; then
 	echo "Curl download failed."
 	exit 1
 fi
-echo "$OUTPUT" | python -m json.tool
+echo "$OUTPUT" | python3 -m json.tool
 
